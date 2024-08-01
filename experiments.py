@@ -1,6 +1,21 @@
 import numpy as np
-import itertools
+import itertools, pickle, os
 import matplotlib.pyplot as plt
+
+base_dir = 'results/'
+# Parameters
+n = 10  # Parameter for grid generation
+T = 100  # Number of iterations for Hedge algorithm
+eta = 0.1  # Learning rate for Hedge algorithm
+num_runs = 3
+
+num_leader_actions = 3
+num_follower_actions = 3
+context_dim = 3
+num_follower_types = 5
+
+seed = 3
+np.random.seed(seed)  # Fix the random seed for reproducibility
 
 def follower_best_response_with_context(follower_payoff_tensor, leader_mixed_strategy, context):
     """
@@ -154,9 +169,9 @@ def hedge_algorithm(experts, T, eta, leader_payoff_tensor, follower_payoff_tenso
     return cumulative_rewards
 
 # Greedy algorithm implementation with rewards and experts
-def greedy_algorithm(strategies, T, eta, leader_payoff_tensor, follower_payoff_tensors, follower_sequence, context_sequence):
+def greedy_algorithm(strategies, T, leader_payoff_tensor, follower_payoff_tensors, follower_sequence, context_sequence):
 
-    num_follower_types = follower_payoff_tensors.shape[0]
+    num_follower_types = len(follower_payoff_tensors)
     follower_histogram = np.zeros(num_follower_types)
     realized_rewards = np.zeros(T)
 
@@ -171,14 +186,16 @@ def greedy_algorithm(strategies, T, eta, leader_payoff_tensor, follower_payoff_t
         best_utility = -10
         best_strategy = None
         for strategy in strategies:
+
+            # estimate utility of strategy
             est_strategy_utility = 0
             mixed_strategy = strategy.get_action(context)
-            for follower_idx in range(follower_payoff_tensors):
+            for follower_idx in range(num_follower_types):
                 est_strategy_utility += leader_expected_utility(leader_payoff_tensor=leader_payoff_tensor, follower_payoff_tensor=follower_payoff_tensors[follower_idx], leader_mixed_strategy=mixed_strategy, context=context) * follower_dist[follower_idx]
 
-                if est_strategy_utility > best_utility:
-                    best_utility = est_strategy_utility
-                    best_strategy = mixed_strategy
+            if est_strategy_utility > best_utility:
+                best_utility = est_strategy_utility
+                best_strategy = mixed_strategy
         
         # get utility of playing best_strategy
         reward = leader_expected_utility(leader_payoff_tensor=leader_payoff_tensor, follower_payoff_tensor=follower_payoff_tensors[follower_sequence[t]], leader_mixed_strategy=best_strategy, context=context)
@@ -186,44 +203,119 @@ def greedy_algorithm(strategies, T, eta, leader_payoff_tensor, follower_payoff_t
         # Calculate the realized reward
         realized_rewards[t] = reward
 
+        # Update follower histogram
+        follower_histogram[follower_sequence[t]] += 1
+
     return realized_rewards
 
-if __name__ == '__main__':
-    # Parameters
-    n = 10  # Parameter for grid generation
-    T = 100  # Number of iterations for Hedge algorithm
-    eta = 0.1  # Learning rate for Hedge algorithm
-    num_runs = 3
+def plotting(n, T, eta, num_runs, num_leader_actions, num_follower_actions, context_dim, num_follower_types):
+    # unpickle
+    fname = base_dir + f"baseline_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
+    baseline_run_list = pickle.load(open(fname,'rb'))
 
-    num_leader_actions = 3
-    num_follower_actions = 3
-    context_dim = 3
-    num_follower_types = 5
+    fname = base_dir + f"policy_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
+    policy_run_list = pickle.load(open(fname,'rb'))
 
-    seed = 3
-    np.random.seed(seed)  # Fix the random seed for reproducibility
+    fname = base_dir + f"greedy_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
+    greedy_run_list = pickle.load(open(fname,'rb'))
+
+    # compute mean + std for each
+    # Stack the arrays into a 2D numpy array
+    stacked_baseline = np.vstack(baseline_run_list)
+    stacked_policy = np.vstack(policy_run_list)
+    stacked_greedy = np.vstack(greedy_run_list)
     
+    # Compute the element-wise mean
+    baseline_mean = np.mean(stacked_baseline, axis=0)
+    policy_mean = np.mean(stacked_policy, axis=0)
+    greedy_mean = np.mean(stacked_greedy, axis=0)
+    
+    # Compute the element-wise standard deviation
+    baseline_std = np.std(stacked_baseline, axis=0)
+    policy_std = np.std(stacked_policy, axis=0)
+    greedy_std = np.std(stacked_greedy, axis=0)
+
+    # Plot cumulative reward as a function of time
+    t_range = list(range(1, T + 1))
+
+    plt.plot(t_range, baseline_mean, label="baseline")
+    plt.fill_between(t_range, baseline_mean - baseline_std, baseline_mean + baseline_std, alpha=0.2)
+
+    plt.plot(t_range, policy_mean, label="policy")
+    plt.fill_between(t_range, policy_mean - policy_std, policy_mean + policy_std, alpha=0.2)
+
+    plt.plot(t_range, greedy_mean, label="greedy")
+    plt.fill_between(t_range, greedy_mean - greedy_std, greedy_mean + greedy_std, alpha=0.2)
+
+    plt.xlabel('Time')
+    plt.ylabel('Cumulative Reward')
+    plt.title('Cumulative Reward as a Function of Time')
+    plt.legend()
+    plt.show()
+
+def sweep():
+    baseline_run_list = []
+    policy_run_list = []
+    greedy_run_list = []
+    for run in range(num_runs):
+        # generate random sequence of followers
+        follower_sequence = generate_random_followers()
+        print("generated follower sequence")
+
+        # generate random sequence of contexts
+        context_sequence = generate_random_contexts()
+        print("generated context sequence")
+
+        # Run Hedge algorithm
+        baseline_rewards = hedge_algorithm(point_experts, T, eta, leader_payoff_tensor, follower_payoff_tensors, follower_sequence, context_sequence)
+        print("ran Hedge on baseline")
+        cumulative_baseline_rewards = np.cumsum(baseline_rewards)
+
+        policy_rewards = hedge_algorithm(policy_experts, T, eta, leader_payoff_tensor, follower_payoff_tensors, follower_sequence, context_sequence)
+        print("ran Hedge on policies")
+        cumulative_policy_rewards = np.cumsum(policy_rewards)
+
+        # run Greedy algorithm
+        greedy_rewards = greedy_algorithm(strategies=point_experts, T=T, leader_payoff_tensor=leader_payoff_tensor, follower_payoff_tensors=follower_payoff_tensors, follower_sequence=follower_sequence, context_sequence=context_sequence)
+        print("ran Greedy algorithm")
+        cumulative_greedy_rewards = np.cumsum(greedy_rewards)
+
+        baseline_run_list.append(cumulative_baseline_rewards)
+        policy_run_list.append(cumulative_policy_rewards)
+        greedy_run_list.append(cumulative_greedy_rewards)
+        print(f"Run {run} completed")
+    
+    fname = base_dir + f"baseline_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
+    if os.path.isfile(fname):
+        pickle.dump(baseline_run_list, open(fname, 'wb'))
+
+    fname = base_dir + f"policy_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
+    if os.path.isfile(fname):
+            pickle.dump(policy_run_list, open(fname, 'wb'))
+
+    fname = base_dir + f"greedy_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
+    if os.path.isfile(fname):
+            pickle.dump(greedy_run_list, open(fname, 'wb'))
+
+    plotting(n, T, eta, num_runs, num_leader_actions, num_follower_actions, context_dim, num_follower_types)
+
+def generate_random_contexts():
+    return [np.random.uniform(-1, 1, size=context_dim) for _ in range(T)]
+
+def generate_adv_contexts():
+    pass
+
+def generate_random_followers():
+    return [np.random.randint(0, num_follower_types - 1) for _ in range(T)]
+
+def generate_adv_followers():
+    pass
+
+if __name__ == '__main__':
     shape = (context_dim, num_leader_actions, num_follower_actions)
     follower_payoff_tensors = [np.random.uniform(-1, 1, size=shape) for _ in range(num_follower_types)]
 
     leader_payoff_tensor = np.random.uniform(-1, 1, size=shape)
-    # leader_payoff_tensor = np.array([
-    # [[3, 2, 1], [2, 1, 3], [1, 3, 2]],
-    # [[0, 1, 0], [4, 1, 0], [3, 1, 0]],
-    # [[2, 1, 0], [1, 0, 1], [5, 2, 1]]
-    # ])
-    # follower_payoff_tensor1 = np.array([
-    # [[3, 2, 1], [2, 1, 3], [1, 3, 2]],
-    # [[0, 1, 0], [4, 1, 0], [3, 1, 0]],
-    # [[2, 1, 0], [1, 0, 1], [5, 2, 1]]
-    # ])
-    # follower_payoff_tensor2 = np.array([
-    # [[3, 2, 1], [2, 1, 3], [1, 3, 2]],
-    # [[0, 1, 0], [4, 1, 0], [3, 1, 0]],
-    # [[2, 1, 0], [1, 0, 1], [5, 2, 1]]
-    # ])
-    # follower_payoff_tensors = [follower_payoff_tensor1, follower_payoff_tensor2]
-    # num_follower_types = len(follower_payoff_tensors)
 
     # Generate grid points
     grid_points = generate_grid_points(n, dimension=num_leader_actions)
@@ -237,53 +329,4 @@ if __name__ == '__main__':
     policy_experts = [Policy(follower_weight_vector=follower_weight_vector, strategy_grid=grid_points, leader_payoff_tensor=leader_payoff_tensor, follower_payoff_tensors=follower_payoff_tensors) for follower_weight_vector in follower_weight_list]
     print("Instantiated policies")
 
-    baseline_run_list = []
-    policy_run_list = []
-    for run in range(num_runs):
-        # generate random sequence of followers
-        follower_sequence = [np.random.randint(0, num_follower_types - 1) for _ in range(T)]
-        print("generated follower sequence")
-
-        # generate random sequence of contexts
-        context_sequence = [np.random.uniform(-1, 1, size=context_dim) for _ in range(T)]
-        print("generated context sequence")
-
-        # Run Hedge algorithm
-        baseline_rewards = hedge_algorithm(point_experts, T, eta, leader_payoff_tensor, follower_payoff_tensors, follower_sequence, context_sequence)
-        print("ran Hedge on baseline")
-        cumulative_baseline_rewards = np.cumsum(baseline_rewards)
-
-        policy_rewards = hedge_algorithm(policy_experts, T, eta, leader_payoff_tensor, follower_payoff_tensors, follower_sequence, context_sequence)
-        print("ran Hedge on policies")
-        cumulative_policy_rewards = np.cumsum(policy_rewards)
-
-        baseline_run_list.append(cumulative_baseline_rewards)
-        policy_run_list.append(cumulative_policy_rewards)
-        print(f"Run {run} completed")
-
-    # compute mean + std for each
-    # Stack the arrays into a 2D numpy array
-    stacked_baseline = np.vstack(baseline_run_list)
-    stacked_policy = np.vstack(policy_run_list)
-    
-    # Compute the element-wise mean
-    baseline_mean = np.mean(stacked_baseline, axis=0)
-    policy_mean = np.mean(stacked_policy, axis=0)
-    
-    # Compute the element-wise standard deviation
-    baseline_std = np.std(stacked_baseline, axis=0)
-    policy_std = np.std(stacked_policy, axis=0)
-
-    # Plot cumulative reward as a function of time
-    t_range = list(range(1, T + 1))
-    plt.plot(t_range, baseline_mean, label="baseline")
-    plt.fill_between(t_range, baseline_mean - baseline_std, baseline_mean + baseline_std, alpha=0.2)
-
-    plt.plot(t_range, policy_mean, label="policy")
-    plt.fill_between(t_range, policy_mean - policy_std, policy_mean + policy_std, alpha=0.2)
-
-    plt.xlabel('Time')
-    plt.ylabel('Cumulative Reward')
-    plt.title('Cumulative Reward as a Function of Time')
-    plt.legend()
-    plt.show()
+    sweep()
