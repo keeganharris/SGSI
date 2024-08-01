@@ -1,5 +1,5 @@
 import numpy as np
-import itertools
+import itertools, random
 import matplotlib.pyplot as plt
 
 def follower_best_response_with_context(follower_payoff_tensor, leader_mixed_strategy, context):
@@ -87,11 +87,11 @@ class Policy(Expert):
     def get_action(self, context):
         best_strategy_utility = -10
         best_strategy = None
-        for strat in self.strategy_grid:
-            strategy_utility = compute_leader_utility(context, strat, self.leader_payoff_tensor, self.follower_payoff_tensors, self.follower_weight_vector)
+        for strategy in self.strategy_grid:
+            strategy_utility = compute_leader_utility(context, strategy, self.leader_payoff_tensor, self.follower_payoff_tensors, self.follower_weight_vector)
             if strategy_utility > best_strategy_utility:
                 best_strategy_utility = strategy_utility
-                best_strategy = strat
+                best_strategy = strategy
         return best_strategy
 
 # Define the strategy subclass
@@ -114,11 +114,14 @@ def generate_grid_points(n, dimension=5):
     return np.array(grid_points)
 
 # Hedge algorithm implementation with rewards and experts
-def hedge_algorithm(experts, num_iterations, eta):
+def hedge_algorithm(experts, num_iterations, eta, leader_payoff_tensor, follower_payoff_tensors, follower_sequence):
     num_experts = len(experts)
     weights = np.ones(num_experts) / num_experts  # Initialize uniform weights
 
     # Simulate some rewards for demonstration (random rewards)
+    # TODO: change! Loop through all followers, and simulate reward of each policy
+    for follower_idx in follower_sequence:
+        pass
     rewards = np.random.rand(num_iterations, num_experts)
 
     cumulative_rewards = np.zeros(num_iterations)
@@ -158,8 +161,8 @@ if __name__ == '__main__':
     [[0, 1, 0], [4, 1, 0], [3, 1, 0]],
     [[2, 1, 0], [1, 0, 1], [5, 2, 1]]
     ])
-    follower_payoff_tensor_list = [follower_payoff_tensor1, follower_payoff_tensor2]
-    num_follower_types = len(follower_payoff_tensor_list)
+    follower_payoff_tensors = [follower_payoff_tensor1, follower_payoff_tensor2]
+    num_follower_types = len(follower_payoff_tensors)
 
     # Generate grid points
     grid_points = generate_grid_points(n, dimension=num_leader_actions)
@@ -169,15 +172,18 @@ if __name__ == '__main__':
     # Generate sets of weights (one for each policy)
     follower_weight_list = generate_grid_points(n, dimension=num_follower_types)
     # Instantiate experts as policies
-    policy_experts = [Policy(follower_weight_vector=follower_weight_vector, strategy_grid=grid_points, leader_payoff_tensor=leader_payoff_tensor, follower_payoff_tensors=follower_payoff_tensor_list) for follower_weight_vector in follower_weight_list]
+    policy_experts = [Policy(follower_weight_vector=follower_weight_vector, strategy_grid=grid_points, leader_payoff_tensor=leader_payoff_tensor, follower_payoff_tensors=follower_payoff_tensors) for follower_weight_vector in follower_weight_list]
+
+    # generate random sequence of followers
+    follower_sequence = [random.randint(0, num_follower_types - 1) for _ in range(num_iterations)]
 
     # Run Hedge algorithm
-    cumulative_rewards_baseline = hedge_algorithm(point_experts, num_iterations, eta)
-    cumulative_rewards_policies = hedge_algorithm(policy_experts, num_iterations, eta)
+    cumulative_baseline_rewards = hedge_algorithm(point_experts, num_iterations, eta, leader_payoff_tensor, follower_payoff_tensors, follower_sequence)
+    cumulative_policy_rewards = hedge_algorithm(policy_experts, num_iterations, eta)
 
     # Plot cumulative reward as a function of time
-    plt.plot(np.cumsum(cumulative_rewards_baseline), label="baseline")
-    plt.plot(np.cumsum(cumulative_rewards_policies), label="policies")
+    plt.plot(np.cumsum(cumulative_baseline_rewards), label="baseline")
+    plt.plot(np.cumsum(cumulative_policy_rewards), label="policy")
     plt.xlabel('Time')
     plt.ylabel('Cumulative Reward')
     plt.title('Cumulative Reward as a Function of Time')
