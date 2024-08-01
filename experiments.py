@@ -192,9 +192,11 @@ if __name__ == '__main__':
         context_sequence = [np.random.rand(context_dim) for _ in range(T)]
 
         # Run Hedge algorithm
-        cumulative_baseline_rewards = hedge_algorithm(point_experts, T, eta, leader_payoff_tensor, follower_payoff_tensors, follower_sequence, context_sequence)
+        baseline_rewards = hedge_algorithm(point_experts, T, eta, leader_payoff_tensor, follower_payoff_tensors, follower_sequence, context_sequence)
+        cumulative_baseline_rewards = np.cumsum(baseline_rewards)
 
-        cumulative_policy_rewards = hedge_algorithm(policy_experts, T, eta, leader_payoff_tensor, follower_payoff_tensors, follower_sequence, context_sequence)
+        policy_rewards = hedge_algorithm(policy_experts, T, eta, leader_payoff_tensor, follower_payoff_tensors, follower_sequence, context_sequence)
+        cumulative_policy_rewards = np.cumsum(policy_rewards)
 
         baseline_run_list.append(cumulative_baseline_rewards)
         policy_run_list.append(cumulative_policy_rewards)
@@ -205,14 +207,21 @@ if __name__ == '__main__':
     stacked_policy = np.vstack(policy_run_list)
     
     # Compute the element-wise mean
-    baseline_mean = np.mean(stacked_arrays, axis=0)
+    baseline_mean = np.mean(stacked_baseline, axis=0)
+    policy_mean = np.mean(stacked_policy, axis=0)
     
     # Compute the element-wise standard deviation
-    std = np.std(stacked_arrays, axis=0)
+    baseline_std = np.std(stacked_baseline, axis=0)
+    policy_std = np.std(stacked_policy, axis=0)
 
     # Plot cumulative reward as a function of time
-    plt.plot(np.cumsum(cumulative_baseline_rewards), label="baseline")
-    plt.plot(np.cumsum(cumulative_policy_rewards), label="policy")
+    t_range = list(range(1, T + 1))
+    plt.plot(t_range, baseline_mean, label="baseline")
+    plt.fill_between(t_range, baseline_mean - baseline_std, baseline_mean + baseline_std, alpha=0.2)
+
+    plt.plot(t_range, policy_mean, label="policy")
+    plt.fill_between(t_range, policy_mean - policy_std, policy_mean + policy_std, alpha=0.2)
+
     plt.xlabel('Time')
     plt.ylabel('Cumulative Reward')
     plt.title('Cumulative Reward as a Function of Time')
