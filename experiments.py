@@ -286,16 +286,13 @@ def sweep():
         print(f"Run {run} completed")
     
     fname = base_dir + f"baseline_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
-    if os.path.isfile(fname):
-        pickle.dump(baseline_run_list, open(fname, 'wb'))
+    pickle.dump(baseline_run_list, open(fname, 'wb'))
 
     fname = base_dir + f"policy_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
-    if os.path.isfile(fname):
-            pickle.dump(policy_run_list, open(fname, 'wb'))
+    pickle.dump(policy_run_list, open(fname, 'wb'))
 
     fname = base_dir + f"greedy_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
-    if os.path.isfile(fname):
-            pickle.dump(greedy_run_list, open(fname, 'wb'))
+    pickle.dump(greedy_run_list, open(fname, 'wb'))
 
     plotting(n, T, eta, num_runs, num_leader_actions, num_follower_actions, context_dim, num_follower_types)
 
