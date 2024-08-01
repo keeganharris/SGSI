@@ -1,5 +1,5 @@
 import numpy as np
-import itertools, random
+import itertools
 import matplotlib.pyplot as plt
 
 def follower_best_response_with_context(follower_payoff_tensor, leader_mixed_strategy, context):
@@ -55,7 +55,6 @@ def leader_expected_utility(leader_payoff_tensor, follower_payoff_tensor, leader
     # Calculate the leader's expected utility
     expected_utility = 0.0
     num_leader_actions = leader_mixed_strategy.shape[0]
-    
     for i in range(num_leader_actions):
         context_dependent_payoff = np.dot(leader_payoff_tensor[i, follower_best_response], context)
         expected_utility += leader_mixed_strategy[i] * context_dependent_payoff
@@ -100,18 +99,28 @@ class Strategy(Expert):
         return self.single_strategy
 
 # Function to generate a uniformly-spaced grid of points in a probability simplex
-def generate_grid_points(n, dimension=5):
-    # Generate all possible combinations of (n+1) non-negative integers that sum to n
-    points = [point for point in itertools.combinations_with_replacement(range(n+1), 5)]
-    # Convert each combination to a point in the simplex by normalizing the sum to 1
-    grid_points = []
-    for point in points:
-        remaining_sum = n - sum(point)
-        for i in range(dimension):
-            new_point = list(point)
-            new_point[i] += remaining_sum
-            grid_points.append(np.array(new_point) / n)
-    return np.array(grid_points)
+def generate_grid_points(n, dimension):
+    """
+    Generate a set of approximately uniformly spaced points in a probability simplex of given dimension.
+    
+    Parameters:
+    n (int): The number of grid points along one dimension.
+    dimension (int): The dimension of the probability simplex.
+    
+    Returns:
+    np.ndarray: An array of shape (num_points, dimension) containing the approximately uniformly spaced points.
+    """
+    points = []
+
+    # Generate all combinations of (dimension - 1) non-negative integers that sum to (n - 1)
+    for comb in itertools.combinations_with_replacement(range(n + 1), dimension - 1):
+        point = np.diff((0,) + comb + (n,))
+        points.append(point)
+    
+    # Normalize to get points in the simplex
+    points = np.array(points) / float(n)
+    
+    return points
 
 # Hedge algorithm implementation with rewards and experts
 def hedge_algorithm(experts, T, eta, leader_payoff_tensor, follower_payoff_tensors, follower_sequence, context_sequence):
@@ -121,6 +130,7 @@ def hedge_algorithm(experts, T, eta, leader_payoff_tensor, follower_payoff_tenso
     # Loop through all followers, and simulate reward of each policy
     rewards = []
     for t in range(T):
+        print(f"t: {t}")
         follower_payoff_tensor = follower_payoff_tensors[follower_sequence[t]]
         context = context_sequence[t]
         current_rewards = np.array([])
@@ -143,37 +153,81 @@ def hedge_algorithm(experts, T, eta, leader_payoff_tensor, follower_payoff_tenso
 
     return cumulative_rewards
 
+# Greedy algorithm implementation with rewards and experts
+def greedy_algorithm(strategies, T, eta, leader_payoff_tensor, follower_payoff_tensors, follower_sequence, context_sequence):
+
+    num_follower_types = follower_payoff_tensors.shape[0]
+    follower_histogram = np.zeros(num_follower_types)
+    realized_rewards = np.zeros(T)
+
+    for t in range(T):
+        context = context_sequence[t]
+        if t==0:
+            follower_dist = np.ones(num_follower_types) / num_follower_types
+        else:
+            follower_dist = follower_histogram / t
+        
+        # compute leader's strategy
+        best_utility = -10
+        best_strategy = None
+        for strategy in strategies:
+            est_strategy_utility = 0
+            mixed_strategy = strategy.get_action(context)
+            for follower_idx in range(follower_payoff_tensors):
+                est_strategy_utility += leader_expected_utility(leader_payoff_tensor=leader_payoff_tensor, follower_payoff_tensor=follower_payoff_tensors[follower_idx], leader_mixed_strategy=mixed_strategy, context=context) * follower_dist[follower_idx]
+
+                if est_strategy_utility > best_utility:
+                    best_utility = est_strategy_utility
+                    best_strategy = mixed_strategy
+        
+        # get utility of playing best_strategy
+        reward = leader_expected_utility(leader_payoff_tensor=leader_payoff_tensor, follower_payoff_tensor=follower_payoff_tensors[follower_sequence[t]], leader_mixed_strategy=best_strategy, context=context)
+        
+        # Calculate the realized reward
+        realized_rewards[t] = reward
+
+    return realized_rewards
+
 if __name__ == '__main__':
     # Parameters
     n = 10  # Parameter for grid generation
-    T = 1000  # Number of iterations for Hedge algorithm
+    T = 100  # Number of iterations for Hedge algorithm
     eta = 0.1  # Learning rate for Hedge algorithm
-    num_runs = 10
+    num_runs = 3
 
     num_leader_actions = 3
     num_follower_actions = 3
     context_dim = 3
+    num_follower_types = 5
 
-    leader_payoff_tensor = np.array([
-    [[3, 2, 1], [2, 1, 3], [1, 3, 2]],
-    [[0, 1, 0], [4, 1, 0], [3, 1, 0]],
-    [[2, 1, 0], [1, 0, 1], [5, 2, 1]]
-    ])
-    follower_payoff_tensor1 = np.array([
-    [[3, 2, 1], [2, 1, 3], [1, 3, 2]],
-    [[0, 1, 0], [4, 1, 0], [3, 1, 0]],
-    [[2, 1, 0], [1, 0, 1], [5, 2, 1]]
-    ])
-    follower_payoff_tensor2 = np.array([
-    [[3, 2, 1], [2, 1, 3], [1, 3, 2]],
-    [[0, 1, 0], [4, 1, 0], [3, 1, 0]],
-    [[2, 1, 0], [1, 0, 1], [5, 2, 1]]
-    ])
-    follower_payoff_tensors = [follower_payoff_tensor1, follower_payoff_tensor2]
-    num_follower_types = len(follower_payoff_tensors)
+    seed = 3
+    np.random.seed(seed)  # Fix the random seed for reproducibility
+    
+    shape = (context_dim, num_leader_actions, num_follower_actions)
+    follower_payoff_tensors = [np.random.uniform(-1, 1, size=shape) for _ in range(num_follower_types)]
+
+    leader_payoff_tensor = np.random.uniform(-1, 1, size=shape)
+    # leader_payoff_tensor = np.array([
+    # [[3, 2, 1], [2, 1, 3], [1, 3, 2]],
+    # [[0, 1, 0], [4, 1, 0], [3, 1, 0]],
+    # [[2, 1, 0], [1, 0, 1], [5, 2, 1]]
+    # ])
+    # follower_payoff_tensor1 = np.array([
+    # [[3, 2, 1], [2, 1, 3], [1, 3, 2]],
+    # [[0, 1, 0], [4, 1, 0], [3, 1, 0]],
+    # [[2, 1, 0], [1, 0, 1], [5, 2, 1]]
+    # ])
+    # follower_payoff_tensor2 = np.array([
+    # [[3, 2, 1], [2, 1, 3], [1, 3, 2]],
+    # [[0, 1, 0], [4, 1, 0], [3, 1, 0]],
+    # [[2, 1, 0], [1, 0, 1], [5, 2, 1]]
+    # ])
+    # follower_payoff_tensors = [follower_payoff_tensor1, follower_payoff_tensor2]
+    # num_follower_types = len(follower_payoff_tensors)
 
     # Generate grid points
     grid_points = generate_grid_points(n, dimension=num_leader_actions)
+
     # Instantiate experts as gridpoints
     point_experts = [Strategy(single_strategy=point) for point in grid_points]
 
@@ -181,25 +235,31 @@ if __name__ == '__main__':
     follower_weight_list = generate_grid_points(n, dimension=num_follower_types)
     # Instantiate experts as policies
     policy_experts = [Policy(follower_weight_vector=follower_weight_vector, strategy_grid=grid_points, leader_payoff_tensor=leader_payoff_tensor, follower_payoff_tensors=follower_payoff_tensors) for follower_weight_vector in follower_weight_list]
+    print("Instantiated policies")
 
     baseline_run_list = []
     policy_run_list = []
-    for run in num_runs:
+    for run in range(num_runs):
         # generate random sequence of followers
-        follower_sequence = [random.randint(0, num_follower_types - 1) for _ in range(T)]
+        follower_sequence = [np.random.randint(0, num_follower_types - 1) for _ in range(T)]
+        print("generated follower sequence")
 
         # generate random sequence of contexts
-        context_sequence = [np.random.rand(context_dim) for _ in range(T)]
+        context_sequence = [np.random.uniform(-1, 1, size=context_dim) for _ in range(T)]
+        print("generated context sequence")
 
         # Run Hedge algorithm
         baseline_rewards = hedge_algorithm(point_experts, T, eta, leader_payoff_tensor, follower_payoff_tensors, follower_sequence, context_sequence)
+        print("ran Hedge on baseline")
         cumulative_baseline_rewards = np.cumsum(baseline_rewards)
 
         policy_rewards = hedge_algorithm(policy_experts, T, eta, leader_payoff_tensor, follower_payoff_tensors, follower_sequence, context_sequence)
+        print("ran Hedge on policies")
         cumulative_policy_rewards = np.cumsum(policy_rewards)
 
         baseline_run_list.append(cumulative_baseline_rewards)
         policy_run_list.append(cumulative_policy_rewards)
+        print(f"Run {run} completed")
 
     # compute mean + std for each
     # Stack the arrays into a 2D numpy array
