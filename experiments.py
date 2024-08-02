@@ -250,6 +250,14 @@ def plotting(context_str, follower_str):
 
     plt.xlabel('Time')
     plt.ylabel('Cumulative Reward')
+    if context_str == 'stoch':
+        context_str = 'stochastic'
+    elif context_str == 'adv':
+        context_str = 'non-stochastic'
+    if follower_str == 'stoch':
+        follower_str = 'stochastic'
+    elif follower_str == 'adv':
+        follower_str = 'non-stochastic'
     plt.title(f'Contexts: {context_str}, Followers: {follower_str}')
     plt.legend()
     plt.show()
@@ -333,27 +341,27 @@ def generate_adv_followers():
     return follower_list
 
 if __name__ == '__main__':
-    shape = (context_dim, num_leader_actions, num_follower_actions)
-    follower_payoff_tensors = [np.random.uniform(-1, 1, size=shape) for _ in range(num_follower_types)]
+    # shape = (context_dim, num_leader_actions, num_follower_actions)
+    # follower_payoff_tensors = [np.random.uniform(-1, 1, size=shape) for _ in range(num_follower_types)]
 
-    leader_payoff_tensor = np.random.uniform(-1, 1, size=shape)
+    # leader_payoff_tensor = np.random.uniform(-1, 1, size=shape)
 
-    # Generate grid points
-    grid_points = generate_grid_points(n, dimension=num_leader_actions)
+    # # Generate grid points
+    # grid_points = generate_grid_points(n, dimension=num_leader_actions)
 
-    # Instantiate experts as gridpoints
-    point_experts = [Strategy(single_strategy=point) for point in grid_points]
+    # # Instantiate experts as gridpoints
+    # point_experts = [Strategy(single_strategy=point) for point in grid_points]
 
-    # Generate sets of weights (one for each policy)
-    follower_weight_list = generate_grid_points(n, dimension=num_follower_types)
-    # Instantiate experts as policies
-    policy_experts = [Policy(follower_weight_vector=follower_weight_vector, strategy_grid=grid_points, leader_payoff_tensor=leader_payoff_tensor, follower_payoff_tensors=follower_payoff_tensors) for follower_weight_vector in follower_weight_list]
-    print("Instantiated policies")
+    # # Generate sets of weights (one for each policy)
+    # follower_weight_list = generate_grid_points(n, dimension=num_follower_types)
+    # # Instantiate experts as policies
+    # policy_experts = [Policy(follower_weight_vector=follower_weight_vector, strategy_grid=grid_points, leader_payoff_tensor=leader_payoff_tensor, follower_payoff_tensors=follower_payoff_tensors) for follower_weight_vector in follower_weight_list]
+    # print("Instantiated policies")
 
-    sweep(adv_contexts=False, adv_followers=True)
-    sweep(adv_contexts=True, adv_followers=False)
-    sweep(adv_contexts=False, adv_followers=False)
+    # sweep(adv_contexts=False, adv_followers=True)
+    # sweep(adv_contexts=True, adv_followers=False)
+    # sweep(adv_contexts=False, adv_followers=False)
 
-    # plotting(context_str='stoch', follower_str='adv')
-    # plotting(context_str='adv', follower_str='stoch')
-    # plotting(context_str='stoch', follower_str='stoch')
+    plotting(context_str='stoch', follower_str='adv')
+    plotting(context_str='adv', follower_str='stoch')
+    plotting(context_str='stoch', follower_str='stoch')
