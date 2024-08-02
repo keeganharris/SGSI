@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 base_dir = 'results/'
 # Parameters
 n = 10  # Parameter for grid generation
-T = 100  # Number of iterations for Hedge algorithm
+T = 50  # Number of iterations for Hedge algorithm
 eta = 0.1  # Learning rate for Hedge algorithm
-num_runs = 3
+num_runs = 5
 
 num_leader_actions = 3
 num_follower_actions = 3
@@ -208,15 +208,16 @@ def greedy_algorithm(strategies, T, leader_payoff_tensor, follower_payoff_tensor
 
     return realized_rewards
 
-def plotting(n, T, eta, num_runs, num_leader_actions, num_follower_actions, context_dim, num_follower_types):
+def plotting(context_str, follower_str):
+
     # unpickle
-    fname = base_dir + f"baseline_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
+    fname = base_dir + f"baseline_context={context_str}_follower={follower_str}_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
     baseline_run_list = pickle.load(open(fname,'rb'))
 
-    fname = base_dir + f"policy_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
+    fname = base_dir + f"policy_context={context_str}_follower={follower_str}_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
     policy_run_list = pickle.load(open(fname,'rb'))
 
-    fname = base_dir + f"greedy_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
+    fname = base_dir + f"greedy_context={context_str}_follower={follower_str}_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
     greedy_run_list = pickle.load(open(fname,'rb'))
 
     # compute mean + std for each
@@ -241,30 +242,42 @@ def plotting(n, T, eta, num_runs, num_leader_actions, num_follower_actions, cont
     plt.plot(t_range, baseline_mean, label="baseline")
     plt.fill_between(t_range, baseline_mean - baseline_std, baseline_mean + baseline_std, alpha=0.2)
 
-    plt.plot(t_range, policy_mean, label="policy")
-    plt.fill_between(t_range, policy_mean - policy_std, policy_mean + policy_std, alpha=0.2)
-
-    plt.plot(t_range, greedy_mean, label="greedy")
+    plt.plot(t_range, greedy_mean, label="Algorithm 1")
     plt.fill_between(t_range, greedy_mean - greedy_std, greedy_mean + greedy_std, alpha=0.2)
+
+    plt.plot(t_range, policy_mean, label="Algorithm 2")
+    plt.fill_between(t_range, policy_mean - policy_std, policy_mean + policy_std, alpha=0.2)
 
     plt.xlabel('Time')
     plt.ylabel('Cumulative Reward')
-    plt.title('Cumulative Reward as a Function of Time')
+    plt.title(f'Contexts: {context_str}, Followers: {follower_str}')
     plt.legend()
     plt.show()
 
-def sweep():
+def sweep(adv_contexts = False, adv_followers = False):
     baseline_run_list = []
     policy_run_list = []
     greedy_run_list = []
     for run in range(num_runs):
-        # generate random sequence of followers
-        follower_sequence = generate_random_followers()
+        if adv_followers:
+            follower_sequence = generate_adv_followers()
+            follower_str = 'adv'
+        else:
+            # generate random sequence of followers
+            follower_sequence = generate_random_followers()
+            follower_str = 'stoch'
         print("generated follower sequence")
 
-        # generate random sequence of contexts
-        context_sequence = generate_random_contexts()
+        if adv_contexts:
+            # generate adversarial sequence of contexts
+            context_sequence = generate_adv_contexts()
+            context_str = 'adv'
+        else:
+            # generate random sequence of contexts
+            context_sequence = generate_random_contexts()
+            context_str = 'stoch'
         print("generated context sequence")
+
 
         # Run Hedge algorithm
         baseline_rewards = hedge_algorithm(point_experts, T, eta, leader_payoff_tensor, follower_payoff_tensors, follower_sequence, context_sequence)
@@ -285,28 +298,39 @@ def sweep():
         greedy_run_list.append(cumulative_greedy_rewards)
         print(f"Run {run} completed")
     
-    fname = base_dir + f"baseline_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
+    fname = base_dir + f"baseline_context={context_str}_follower={follower_str}_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
     pickle.dump(baseline_run_list, open(fname, 'wb'))
 
-    fname = base_dir + f"policy_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
+    fname = base_dir + f"policy_context={context_str}_follower={follower_str}_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
     pickle.dump(policy_run_list, open(fname, 'wb'))
 
-    fname = base_dir + f"greedy_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
+    fname = base_dir + f"greedy_context={context_str}_follower={follower_str}_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
     pickle.dump(greedy_run_list, open(fname, 'wb'))
 
-    plotting(n, T, eta, num_runs, num_leader_actions, num_follower_actions, context_dim, num_follower_types)
+    # plotting(context_str=context_str, follower_str=follower_str)
 
 def generate_random_contexts():
     return [np.random.uniform(-1, 1, size=context_dim) for _ in range(T)]
 
 def generate_adv_contexts():
-    pass
+    context1 = np.zeros(context_dim)
+    context2 = np.ones(context_dim)
+    context3 = -1*np.ones(context_dim)
+    context_list = [context1, context2, context3, context1]
+    contexts = [context for context in context_list for _ in range(T//4)]
+    contexts.append(context1)
+    contexts.append(context2)
+    return contexts
 
 def generate_random_followers():
     return [np.random.randint(0, num_follower_types - 1) for _ in range(T)]
 
 def generate_adv_followers():
-    pass
+    follower_list = []
+    for t in range(T//num_follower_types):
+        for follower_idx in range(num_follower_types):
+            follower_list.append(follower_idx)
+    return follower_list
 
 if __name__ == '__main__':
     shape = (context_dim, num_leader_actions, num_follower_actions)
@@ -326,4 +350,10 @@ if __name__ == '__main__':
     policy_experts = [Policy(follower_weight_vector=follower_weight_vector, strategy_grid=grid_points, leader_payoff_tensor=leader_payoff_tensor, follower_payoff_tensors=follower_payoff_tensors) for follower_weight_vector in follower_weight_list]
     print("Instantiated policies")
 
-    sweep()
+    sweep(adv_contexts=False, adv_followers=True)
+    sweep(adv_contexts=True, adv_followers=False)
+    sweep(adv_contexts=False, adv_followers=False)
+
+    # plotting(context_str='stoch', follower_str='adv')
+    # plotting(context_str='adv', follower_str='stoch')
+    # plotting(context_str='stoch', follower_str='stoch')
