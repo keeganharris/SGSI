@@ -2,15 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 
-# Global variables for easy configurability
-CONTEXT_LENGTH = 3
-K = 5
-NUM_ACTIONS = 5
-NUM_FOLLOWER_ACTIONS = 4
-GRID_RESOLUTION = 10  # Controls the coarseness of the uniform grid
-T = 1000
-base_dir = 'results/'
-
 class OFUL:
     def __init__(self, alpha=1.0, lambda_=1.0):
         self.alpha = alpha                      # parameter to trade-off between exploration & exploitation
@@ -127,7 +118,6 @@ class StackelbergGame:
         raise ValueError("No action matches the given utility vector.")
 
 # Generate random linear mappings for leader and follower utility functions
-np.random.seed(42)  # For reproducibility
 def generate_leader_utility_function():
     M = np.round(np.random.rand(NUM_ACTIONS, NUM_FOLLOWER_ACTIONS, CONTEXT_LENGTH), 2)  # payoff tensor rounded to 2 decimal places
 
@@ -161,39 +151,32 @@ def generate_uniform_grid(grid_resolution, num_actions):
     recursive_fill([], num_actions)
     return grid
 
-def plot_cumulative_utilities(utility_list, label_list, T):
-    plt.figure(figsize=(10, 6))
-    for idx, utility in enumerate(utility_list):
-        plt.plot(range(T), utility, label=label_list[idx])
-    plt.xlabel("Time (T)")
-    plt.ylabel("Cumulative Expected Utility")
-    plt.title("Cumulative Expected Utility vs Time")
-    plt.legend()
-    plt.grid()
-    plt.show()
+def generate_games():
+    # only generate game_list if it hasn't already been generated
+    game_list = []
+    for run in range(NUM_RUNS):
+        # Define the context space and action space
+        context_sequence = [np.round(np.random.rand(CONTEXT_LENGTH), 2) for _ in range(T)]      # random sqeuence of T contexts rounded to 2 decimal places
+        action_space = generate_uniform_grid(GRID_RESOLUTION, NUM_ACTIONS)              # uniform grid over the NUM_ACTIONS-dimensional probability simplex 
 
-def generate_game():
-    # Define the context space and action space
-    context_sequence = [np.round(np.random.rand(CONTEXT_LENGTH), 2) for _ in range(T)]      # random sqeuence of T contexts rounded to 2 decimal places
-    action_space = generate_uniform_grid(GRID_RESOLUTION, NUM_ACTIONS)              # uniform grid over the NUM_ACTIONS-dimensional probability simplex 
+        # Define leader and follower utility functions
+        leader_utility_function = generate_leader_utility_function()
+        follower_utility_functions = [
+            generate_follower_utility_function() for _ in range(K)
+        ]
 
-    # Define leader and follower utility functions
-    leader_utility_function = generate_leader_utility_function()
-    follower_utility_functions = [
-        generate_follower_utility_function() for _ in range(K)
-    ]
+        # Define the sequence of followers
+        follower_sequence = np.random.choice(range(K), size=T)
 
-    # Define the sequence of followers
-    follower_sequence = np.random.choice(range(K), size=T)
-
-    game_dict = {}
-    game_dict["context_sequence"] = context_sequence
-    game_dict["action_space"] = action_space
-    game_dict["leader_utility_function"] = leader_utility_function
-    game_dict["follower_utility_functions"] = follower_utility_functions
-    game_dict["follower_sequence"] = follower_sequence
+        game_dict = {}
+        game_dict["context_sequence"] = context_sequence
+        game_dict["action_space"] = action_space
+        game_dict["leader_utility_function"] = leader_utility_function
+        game_dict["follower_utility_functions"] = follower_utility_functions
+        game_dict["follower_sequence"] = follower_sequence
+        game_list.append(game_dict)
     
-    return game_dict
+    return game_list
 
 def run_oful(game_dict):
     context_sequence = game_dict["context_sequence"]
@@ -241,15 +224,40 @@ def run_logdet(game_dict):
     logdet_cumulative_utility = logdet_game.play_game()
     return logdet_cumulative_utility
 
-fname = base_dir + f"baseline_context={context_str}_follower={follower_str}_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
-pickle.dump(baseline_run_list, open(fname, 'wb'))
+def plot_cumulative_utilities(alg_list):
+    plt.figure(figsize=(10, 6))
+    for idx, utility in enumerate(alg_list):
+        plt.plot(range(T), utility, label=alg_list[idx])
+    plt.xlabel("Time (T)")
+    plt.ylabel("Cumulative Expected Utility")
+    plt.title("Cumulative Expected Utility vs Time")
+    plt.legend()
+    plt.grid()
+    plt.show()
 
-game_dict = generate_game()
-oful_cumulative_utility = run_oful(game_dict)
-logdet_cumulative_utility = run_logdet(game_dict)
 
-utility_list = [oful_cumulative_utility, logdet_cumulative_utility]
-label_list = ["OFUL", "logdet"]
+# Global variables for easy configurability
+CONTEXT_LENGTH = 3
+K = 5
+NUM_ACTIONS = 5
+NUM_FOLLOWER_ACTIONS = 4
+GRID_RESOLUTION = 10  # Controls the coarseness of the uniform grid
+T = 1000
+NUM_RUNS = 1
+base_dir = 'results/'
 
-# Plot the cumulative utilities
-plot_cumulative_utilities(utility_list, label_list, T)
+if __name__=="__main__":
+    game_list = generate_games()
+
+    alg_list = ["OFUL", "logdet"]
+    for alg in alg_list:
+        if alg == "OFUL":
+            oful_utility_list = []
+            for game_dict in game_list:
+                oful_utility_list.append(run_oful(game_dict)) 
+        elif alg == "logdet":
+            logdet_utility_list = []
+            for game_dict in game_list:
+                logdet_utility_list.append(run_logdet(game_dict)) 
+
+    plot_cumulative_utilities(alg_list)
