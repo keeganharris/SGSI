@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import pickle
+import pickle, os
 
 class OFUL:
     def __init__(self, alpha=1.0, lambda_=1.0):
@@ -66,7 +66,9 @@ class StackelbergGame:
         total_utility = 0
 
         for t in range(T):
-            print(f"t = {t}")
+            if t % 100 == 0:
+                print(f"t = {t}")
+            
             # Step 1: Observe context z_t
             z_t = self.context_sequence[t]
             follower_index = self.follower_sequence[t]
@@ -153,6 +155,10 @@ def generate_uniform_grid(grid_resolution, num_actions):
 
 def generate_games():
     # only generate game_list if it hasn't already been generated
+    
+    # if os.path.exists(game_fname):
+    #     print("games_list already exists, skipped running.")
+    # else:
     game_list = []
     for run in range(NUM_RUNS):
         # Define the context space and action space
@@ -175,7 +181,8 @@ def generate_games():
         game_dict["follower_utility_functions"] = follower_utility_functions
         game_dict["follower_sequence"] = follower_sequence
         game_list.append(game_dict)
-    
+
+    # pickle.dump(game_list, open(game_fname, 'wb'))
     return game_list
 
 def run_oful(game_dict):
@@ -224,13 +231,19 @@ def run_logdet(game_dict):
     logdet_cumulative_utility = logdet_game.play_game()
     return logdet_cumulative_utility
 
-def plot_cumulative_utilities(alg_list):
+def plot_cumulative_utilities(alg_dict):
     plt.figure(figsize=(10, 6))
-    for idx, utility in enumerate(alg_list):
-        plt.plot(range(T), utility, label=alg_list[idx])
+    for alg in alg_dict.keys():
+        # compute mean + std
+        alg_utility_list = pickle.load(open(alg_dict[alg],'rb'))
+        stacked_utilities = np.vstack(alg_utility_list)
+        alg_mean = np.mean(stacked_utilities, axis=0)
+        alg_std = np.std(stacked_utilities, axis=0)
+        plt.plot(range(T), alg_mean, label=alg)
+        plt.fill_between(range(T), alg_mean - alg_std, alg_mean + alg_std, alpha=0.2)
     plt.xlabel("Time (T)")
     plt.ylabel("Cumulative Expected Utility")
-    plt.title("Cumulative Expected Utility vs Time")
+    plt.title(f"d={CONTEXT_LENGTH}, K={K}, {NUM_ACTIONS} leader actions, {NUM_FOLLOWER_ACTIONS} follower actions")
     plt.legend()
     plt.grid()
     plt.show()
@@ -243,21 +256,42 @@ NUM_ACTIONS = 5
 NUM_FOLLOWER_ACTIONS = 4
 GRID_RESOLUTION = 10  # Controls the coarseness of the uniform grid
 T = 1000
-NUM_RUNS = 1
+NUM_RUNS = 10
 base_dir = 'results/'
+# game_fname = base_dir + f"num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_games.pkl"
+oful_fname = base_dir + f"num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_oful.pkl"
+logdet_fname = base_dir + f"num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_logdet.pkl"
 
 if __name__=="__main__":
+    print("Generating games")
     game_list = generate_games()
 
-    alg_list = ["OFUL", "logdet"]
-    for alg in alg_list:
-        if alg == "OFUL":
-            oful_utility_list = []
-            for game_dict in game_list:
-                oful_utility_list.append(run_oful(game_dict)) 
-        elif alg == "logdet":
-            logdet_utility_list = []
-            for game_dict in game_list:
-                logdet_utility_list.append(run_logdet(game_dict)) 
+    # game_list = pickle.load(open(game_fname,'rb'))
 
-    plot_cumulative_utilities(alg_list)
+    alg_list = ["OFUL", "logdet"]
+    alg_dict = {}
+    for alg in alg_list:
+
+        if alg == "OFUL":
+            alg_dict[alg] = oful_fname
+            if os.path.exists(oful_fname):
+                print("OFUL has already been run.")
+            else:
+                oful_utility_list = []
+                for idx, game_dict in enumerate(game_list):
+                    print(f"OFUL run {idx+1}")
+                    oful_utility_list.append(run_oful(game_dict)) 
+                pickle.dump(oful_utility_list, open(oful_fname, 'wb'))
+
+        elif alg == "logdet":
+            alg_dict[alg] = logdet_fname
+            if os.path.exists(logdet_fname):
+                print("logdet has already been run.")
+            else:
+                logdet_utility_list = []
+                for idx, game_dict in enumerate(game_list):
+                    print(f"logdet run {idx+1}")
+                    logdet_utility_list.append(run_logdet(game_dict)) 
+                pickle.dump(logdet_utility_list, open(logdet_fname, 'wb'))
+
+    plot_cumulative_utilities(alg_dict)
