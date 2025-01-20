@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import pickle
 
 # Global variables for easy configurability
 CONTEXT_LENGTH = 3
@@ -8,6 +9,7 @@ NUM_ACTIONS = 5
 NUM_FOLLOWER_ACTIONS = 4
 GRID_RESOLUTION = 10  # Controls the coarseness of the uniform grid
 T = 1000
+base_dir = 'results/'
 
 class OFUL:
     def __init__(self, alpha=1.0, lambda_=1.0):
@@ -170,49 +172,84 @@ def plot_cumulative_utilities(utility_list, label_list, T):
     plt.grid()
     plt.show()
 
-# Define the context space and action space
-context_sequence = [np.round(np.random.rand(CONTEXT_LENGTH), 2) for _ in range(T)]      # random sqeuence of T contexts rounded to 2 decimal places
-action_space = generate_uniform_grid(GRID_RESOLUTION, NUM_ACTIONS)              # uniform grid over the NUM_ACTIONS-dimensional probability simplex 
+def generate_game():
+    # Define the context space and action space
+    context_sequence = [np.round(np.random.rand(CONTEXT_LENGTH), 2) for _ in range(T)]      # random sqeuence of T contexts rounded to 2 decimal places
+    action_space = generate_uniform_grid(GRID_RESOLUTION, NUM_ACTIONS)              # uniform grid over the NUM_ACTIONS-dimensional probability simplex 
 
-# Initialize the OFUL contextual bandit
-oful_bandit = OFUL()
+    # Define leader and follower utility functions
+    leader_utility_function = generate_leader_utility_function()
+    follower_utility_functions = [
+        generate_follower_utility_function() for _ in range(K)
+    ]
 
-# Define leader and follower utility functions
-leader_utility_function = generate_leader_utility_function()
-follower_utility_functions = [
-    generate_follower_utility_function() for _ in range(K)
-]
+    # Define the sequence of followers
+    follower_sequence = np.random.choice(range(K), size=T)
 
-# Define the sequence of followers
-follower_sequence = np.random.choice(range(K), size=T)
+    game_dict = {}
+    game_dict["context_sequence"] = context_sequence
+    game_dict["action_space"] = action_space
+    game_dict["leader_utility_function"] = leader_utility_function
+    game_dict["follower_utility_functions"] = follower_utility_functions
+    game_dict["follower_sequence"] = follower_sequence
+    
+    return game_dict
 
-# Run the game with OFUL
-oful_game = StackelbergGame(
-    action_space=action_space,
-    bandit_algorithm=oful_bandit,
-    leader_utility_function=leader_utility_function,
-    follower_utility_functions=follower_utility_functions,
-    context_sequence=context_sequence,
-    follower_sequence=follower_sequence
-)
-oful_cumulative_utility = oful_game.play_game()
+def run_oful(game_dict):
+    context_sequence = game_dict["context_sequence"]
+    action_space = game_dict["action_space"]
+    leader_utility_function = game_dict["leader_utility_function"]
+    follower_utility_functions = game_dict["follower_utility_functions"]
+    follower_sequence = game_dict["follower_sequence"]
 
-# # Initialize the LogDetFTRL bandit
-# logdet_bandit = LogDetFTRL()
+    # Initialize the OFUL contextual bandit
+    oful_bandit = OFUL()
 
-# # Run the game with LogDetFTRL
-# logdet_game = StackelbergGame(
-#     action_space=action_space,
-#     bandit_algorithm=logdet_bandit,
-#     leader_utility_function=leader_utility_function,
-#     follower_utility_functions=follower_utility_functions,
-#     context_sequence=context_sequence,
-#     follower_sequence=follower_sequence
-# )
-# logdet_cumulative_utility = logdet_game.play_game()
+    # Run the game with OFUL
+    oful_game = StackelbergGame(
+        action_space=action_space,
+        bandit_algorithm=oful_bandit,
+        leader_utility_function=leader_utility_function,
+        follower_utility_functions=follower_utility_functions,
+        context_sequence=context_sequence,
+        follower_sequence=follower_sequence
+    )
 
-utility_list = [oful_cumulative_utility]
-label_list = ["OFUL"]
+    oful_cumulative_utility = oful_game.play_game()
+    return oful_cumulative_utility
+
+def run_logdet(game_dict):
+    context_sequence = game_dict["context_sequence"]
+    action_space = game_dict["action_space"]
+    leader_utility_function = game_dict["leader_utility_function"]
+    follower_utility_functions = game_dict["follower_utility_functions"]
+    follower_sequence = game_dict["follower_sequence"]
+
+    # Initialize the LogDetFTRL bandit
+    logdet_bandit = LogDetFTRL()
+
+    # Run the game with LogDetFTRL
+    logdet_game = StackelbergGame(
+        action_space=action_space,
+        bandit_algorithm=logdet_bandit,
+        leader_utility_function=leader_utility_function,
+        follower_utility_functions=follower_utility_functions,
+        context_sequence=context_sequence,
+        follower_sequence=follower_sequence
+    )
+
+    logdet_cumulative_utility = logdet_game.play_game()
+    return logdet_cumulative_utility
+
+fname = base_dir + f"baseline_context={context_str}_follower={follower_str}_n={n}_T={T}_eta={eta}_num_runs={num_runs}_num_leader_actions={num_leader_actions}_num_follower_actions={num_follower_actions}_context_dim_{context_dim}_num_follower_types{num_follower_types}.pkl"
+pickle.dump(baseline_run_list, open(fname, 'wb'))
+
+game_dict = generate_game()
+oful_cumulative_utility = run_oful(game_dict)
+logdet_cumulative_utility = run_logdet(game_dict)
+
+utility_list = [oful_cumulative_utility, logdet_cumulative_utility]
+label_list = ["OFUL", "logdet"]
 
 # Plot the cumulative utilities
 plot_cumulative_utilities(utility_list, label_list, T)
