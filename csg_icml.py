@@ -3,18 +3,19 @@ import matplotlib.pyplot as plt
 import pickle, os, random
 
 # Global variables for easy configurability
-CONTEXT_LENGTH = 3
-K = 5
-NUM_ACTIONS = 5
+CONTEXT_LENGTH = 4
+K = 4
+NUM_ACTIONS = 4
 NUM_FOLLOWER_ACTIONS = 4
 GRID_RESOLUTION = 10  # Controls the coarseness of the uniform grid
-T = 1000
+T = 2000
+EXPLORE_LENGTH = int(T / 5)
 NUM_RUNS = 10
-FOLLOWER_CONTEXT = False
+FOLLOWER_CONTEXT = True
 base_dir = 'results/'
 oful_fname = base_dir + f"follower_context={FOLLOWER_CONTEXT}_num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_oful.pkl"
 logdet_fname = base_dir + f"follower_context={FOLLOWER_CONTEXT}_num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_logdet.pkl"
-alg3_fname = base_dir + f"follower_context={FOLLOWER_CONTEXT}_num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_alg3.pkl"
+alg3_fname = base_dir + f"follower_context={FOLLOWER_CONTEXT}_num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_explore_length={EXPLORE_LENGTH}_alg3.pkl"
 random_fname = base_dir + f"follower_context={FOLLOWER_CONTEXT}_num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_random.pkl"
 
 class OFUL:
@@ -48,23 +49,57 @@ class OFUL:
 
 class LogDetFTRL:
     def __init__(self, eta=0.1, alpha=1.0):
+        """
+        Initialize the LogDet-FTRL algorithm.
+
+        Args:
+            eta (float): Learning rate for updating gradients.
+            alpha (float): Regularization parameter for the initial H matrix.
+        """
         self.eta = eta
         self.alpha = alpha
-        self.H = np.eye(K)
+        self.H = alpha * np.eye(K)  # Regularization term to ensure positive-definiteness
         self.sum_gradients = np.zeros((K, K))
 
     def recommend(self, U_t):
+        """
+        Recommend an action based on the surrogate objective.
+
+        Args:
+            U_t (list of np.array): Utility vectors for each candidate action.
+
+        Returns:
+            np.array: The utility vector corresponding to the recommended action.
+        """
         utilities = []
+
         for u in U_t:
-            u_matrix = np.outer(u, u)
-            trace_term = np.trace(self.H @ u_matrix)
-            utilities.append((-trace_term, u))
+            u_matrix = np.outer(u, u)  # Outer product to form the covariance matrix
+
+            # Compute the surrogate utility using the log-det barrier
+            surrogate_utility = np.trace(self.H @ u_matrix)
+
+            # Append the utility and action to the list
+            utilities.append((surrogate_utility, u))
+
+        # Return the action with the maximum surrogate utility
         _, best_u = max(utilities)
         return best_u
 
     def observe_utility(self, v_t, observed_utility):
-        v_matrix = np.outer(v_t, v_t)
-        self.sum_gradients += v_matrix * observed_utility
+        """
+        Update the algorithm based on observed utilities.
+
+        Args:
+            v_t (np.array): The utility vector of the chosen action.
+            observed_utility (float): The observed utility for the chosen action.
+        """
+        v_matrix = np.outer(v_t, v_t)  # Covariance matrix for the chosen action
+
+        # Update the gradient matrix with the observed utility
+        self.sum_gradients += self.eta * v_matrix * observed_utility
+
+        # Update H matrix using the new gradients
         self.H = np.linalg.inv(self.alpha * np.eye(K) + self.sum_gradients)
 
 class Algorithm3:
@@ -510,7 +545,7 @@ def run_random(game_dict):
     return random_cumulative_utility
 
 def plot_cumulative_utilities(alg_dict):
-    plt.figure(figsize=(10, 6))
+    # plt.figure(figsize=(10, 6))
     for alg in alg_dict.keys():
         # compute mean + std
         alg_utility_list = pickle.load(open(alg_dict[alg],'rb'))
@@ -519,11 +554,11 @@ def plot_cumulative_utilities(alg_dict):
         alg_std = np.std(stacked_utilities, axis=0)
         plt.plot(range(T), alg_mean, label=alg)
         plt.fill_between(range(T), alg_mean - alg_std, alg_mean + alg_std, alpha=0.2)
-    plt.xlabel("Time (T)")
-    plt.ylabel("Cumulative Expected Utility")
+    plt.xlabel("Time")
+    plt.ylabel("Cumulative Utility")
     plt.title(f"d={CONTEXT_LENGTH}, K={K}, {NUM_ACTIONS} leader actions, {NUM_FOLLOWER_ACTIONS} follower actions")
     plt.legend()
-    plt.grid()
+    # plt.grid()
     plt.show()
 
 if __name__=="__main__":
@@ -532,12 +567,13 @@ if __name__=="__main__":
 
     # game_list = pickle.load(open(game_fname,'rb'))
 
-    alg_list = ["OFUL", "logdet", "alg3", "random"]
+    # alg_list = ["Algorithm1-OFUL", "Barycentric Explore-Then-Commit", "Random Baseline"]
+    alg_list = ["Algorithm1-OFUL", "Random Baseline"]
     # alg_list = ["alg3"]
     alg_dict = {}
     for alg in alg_list:
 
-        if alg == "OFUL":
+        if alg == "Algorithm1-OFUL":
             alg_dict[alg] = oful_fname
             if os.path.exists(oful_fname):
                 print("OFUL has already been run.")
@@ -559,7 +595,7 @@ if __name__=="__main__":
                     logdet_utility_list.append(run_logdet(game_dict)) 
                 pickle.dump(logdet_utility_list, open(logdet_fname, 'wb'))
     
-        elif alg == "alg3":
+        elif alg == "Barycentric Explore-Then-Commit":
             alg_dict[alg] = alg3_fname
             if os.path.exists(alg3_fname):
                 print("alg3 has already been run.")
@@ -567,10 +603,10 @@ if __name__=="__main__":
                 alg3_utility_list = []
                 for idx, game_dict in enumerate(game_list):
                     print(f"alg3 run {idx+1}")
-                    alg3_utility_list.append(run_algorithm3(game_dict, num_exploration_rounds=K)) 
+                    alg3_utility_list.append(run_algorithm3(game_dict, num_exploration_rounds=EXPLORE_LENGTH)) 
                 pickle.dump(alg3_utility_list, open(alg3_fname, 'wb'))
         
-        elif alg == "random":
+        elif alg == "Random Baseline":
             alg_dict[alg] = random_fname
             if os.path.exists(random_fname):
                 print("Random guess has already been run.")
