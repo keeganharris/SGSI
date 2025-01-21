@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import pickle, os, math
-from itertools import combinations
+import pickle, os, random
 
 # Global variables for easy configurability
 CONTEXT_LENGTH = 3
@@ -10,12 +9,13 @@ NUM_ACTIONS = 5
 NUM_FOLLOWER_ACTIONS = 4
 GRID_RESOLUTION = 10  # Controls the coarseness of the uniform grid
 T = 1000
-NUM_RUNS = 1
+NUM_RUNS = 10
 FOLLOWER_CONTEXT = False
 base_dir = 'results/'
 oful_fname = base_dir + f"follower_context={FOLLOWER_CONTEXT}_num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_oful.pkl"
 logdet_fname = base_dir + f"follower_context={FOLLOWER_CONTEXT}_num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_logdet.pkl"
 alg3_fname = base_dir + f"follower_context={FOLLOWER_CONTEXT}_num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_alg3.pkl"
+random_fname = base_dir + f"follower_context={FOLLOWER_CONTEXT}_num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_random.pkl"
 
 class OFUL:
     def __init__(self, alpha=1.0, lambda_=1.0):
@@ -149,6 +149,16 @@ class Algorithm3:
         Update the algorithm based on observed utilities (if needed).
         Currently a placeholder for any adaptive updates.
         """
+        pass
+
+class RandomGuess:
+    def __init__(self):
+        pass
+
+    def recommend(self, U_t):
+        return random.choice(U_t)
+
+    def observe_utility(self, v_t, observed_utility):
         pass
 
 class StackelbergGame:
@@ -477,6 +487,28 @@ def generate_barycentric_spanner(action_space):
 
     return [list(row) for row in spanner]
 
+def run_random(game_dict):
+    context_sequence = game_dict["context_sequence"]
+    action_space = game_dict["action_space"]
+    leader_utility_function = game_dict["leader_utility_function"]
+    follower_utility_functions = game_dict["follower_utility_functions"]
+    follower_sequence = game_dict["follower_sequence"]
+
+    random_bandit = RandomGuess()
+
+    # Run the game with RandomGuess
+    random_game = StackelbergGame(
+        action_space=action_space,
+        bandit_algorithm=random_bandit,
+        leader_utility_function=leader_utility_function,
+        follower_utility_functions=follower_utility_functions,
+        context_sequence=context_sequence,
+        follower_sequence=follower_sequence
+    )
+
+    random_cumulative_utility = random_game.play_game()
+    return random_cumulative_utility
+
 def plot_cumulative_utilities(alg_dict):
     plt.figure(figsize=(10, 6))
     for alg in alg_dict.keys():
@@ -500,7 +532,7 @@ if __name__=="__main__":
 
     # game_list = pickle.load(open(game_fname,'rb'))
 
-    alg_list = ["OFUL", "logdet", "alg3"]
+    alg_list = ["OFUL", "logdet", "alg3", "random"]
     # alg_list = ["alg3"]
     alg_dict = {}
     for alg in alg_list:
@@ -535,7 +567,18 @@ if __name__=="__main__":
                 alg3_utility_list = []
                 for idx, game_dict in enumerate(game_list):
                     print(f"alg3 run {idx+1}")
-                    alg3_utility_list.append(run_algorithm3(game_dict, num_exploration_rounds=25)) 
+                    alg3_utility_list.append(run_algorithm3(game_dict, num_exploration_rounds=K)) 
                 pickle.dump(alg3_utility_list, open(alg3_fname, 'wb'))
+        
+        elif alg == "random":
+            alg_dict[alg] = random_fname
+            if os.path.exists(random_fname):
+                print("Random guess has already been run.")
+            else:
+                random_utility_list = []
+                for idx, game_dict in enumerate(game_list):
+                    print(f"random run {idx+1}")
+                    random_utility_list.append(run_random(game_dict)) 
+                pickle.dump(random_utility_list, open(random_fname, 'wb'))
 
     plot_cumulative_utilities(alg_dict)
