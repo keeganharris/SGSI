@@ -3,20 +3,50 @@ import matplotlib.pyplot as plt
 import pickle, os, random
 
 # Global variables for easy configurability
-CONTEXT_LENGTH = 4
+CONTEXT_LENGTH = 2
 K = 4
 NUM_ACTIONS = 4
 NUM_FOLLOWER_ACTIONS = 4
 GRID_RESOLUTION = 10  # Controls the coarseness of the uniform grid
-T = 2000
+T = 200
 EXPLORE_LENGTH = int(T / 5)
-NUM_RUNS = 10
+NUM_RUNS = 4
 FOLLOWER_CONTEXT = True
 base_dir = 'results/'
 oful_fname = base_dir + f"follower_context={FOLLOWER_CONTEXT}_num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_oful.pkl"
 logdet_fname = base_dir + f"follower_context={FOLLOWER_CONTEXT}_num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_logdet.pkl"
 alg3_fname = base_dir + f"follower_context={FOLLOWER_CONTEXT}_num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_explore_length={EXPLORE_LENGTH}_alg3.pkl"
 random_fname = base_dir + f"follower_context={FOLLOWER_CONTEXT}_num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_random.pkl"
+optimal_fname = base_dir + f"follower_context={FOLLOWER_CONTEXT}_num_runs={NUM_RUNS}_T={T}_grid_resolution={GRID_RESOLUTION}_num_follower_actions={NUM_FOLLOWER_ACTIONS}_num_actions={NUM_ACTIONS}_K={K}_context_length={CONTEXT_LENGTH}_optimal.pkl"
+
+
+
+class OptimalPolicy:
+    def __init__(self, follower_distribution):
+        self.fd = follower_distribution              # follower distribution in hindsight
+
+    def recommend(self, U_t):       # act greedily w.r.t. the true follower distribution
+        """
+        Recommend an action based on estimated probabilities.
+        """
+        best_action = None
+        max_utility = float('-inf')
+
+        for utility_vector in U_t:
+
+            expected_utility = np.dot(self.fd, utility_vector)
+            if expected_utility > max_utility:
+                max_utility = expected_utility
+                best_action = utility_vector
+
+        return best_action
+
+    def observe_utility(self, v_t, observed_utility):
+        """
+        Update the algorithm based on observed utilities (if needed).
+        Currently a placeholder for any adaptive updates.
+        """
+        pass
 
 class OFUL:
     def __init__(self, alpha=1.0, lambda_=1.0):
@@ -46,61 +76,6 @@ class OFUL:
     def observe_utility(self, X_t, r_t):
         self.V += np.outer(X_t, X_t)
         self.b += r_t * X_t
-
-class LogDetFTRL:
-    def __init__(self, eta=0.1, alpha=1.0):
-        """
-        Initialize the LogDet-FTRL algorithm.
-
-        Args:
-            eta (float): Learning rate for updating gradients.
-            alpha (float): Regularization parameter for the initial H matrix.
-        """
-        self.eta = eta
-        self.alpha = alpha
-        self.H = alpha * np.eye(K)  # Regularization term to ensure positive-definiteness
-        self.sum_gradients = np.zeros((K, K))
-
-    def recommend(self, U_t):
-        """
-        Recommend an action based on the surrogate objective.
-
-        Args:
-            U_t (list of np.array): Utility vectors for each candidate action.
-
-        Returns:
-            np.array: The utility vector corresponding to the recommended action.
-        """
-        utilities = []
-
-        for u in U_t:
-            u_matrix = np.outer(u, u)  # Outer product to form the covariance matrix
-
-            # Compute the surrogate utility using the log-det barrier
-            surrogate_utility = np.trace(self.H @ u_matrix)
-
-            # Append the utility and action to the list
-            utilities.append((surrogate_utility, u))
-
-        # Return the action with the maximum surrogate utility
-        _, best_u = max(utilities)
-        return best_u
-
-    def observe_utility(self, v_t, observed_utility):
-        """
-        Update the algorithm based on observed utilities.
-
-        Args:
-            v_t (np.array): The utility vector of the chosen action.
-            observed_utility (float): The observed utility for the chosen action.
-        """
-        v_matrix = np.outer(v_t, v_t)  # Covariance matrix for the chosen action
-
-        # Update the gradient matrix with the observed utility
-        self.sum_gradients += self.eta * v_matrix * observed_utility
-
-        # Update H matrix using the new gradients
-        self.H = np.linalg.inv(self.alpha * np.eye(K) + self.sum_gradients)
 
 class Algorithm3:
     # Algorithm 3 in NeurIPS paper
@@ -413,6 +388,36 @@ def generate_games(follower_context=True):
     # pickle.dump(game_list, open(game_fname, 'wb'))
     return game_list
 
+def run_optimal_policy(game_dict):
+    context_sequence = game_dict["context_sequence"]
+    action_space = game_dict["action_space"]
+    leader_utility_function = game_dict["leader_utility_function"]
+    follower_utility_functions = game_dict["follower_utility_functions"]
+    follower_sequence = game_dict["follower_sequence"]
+
+    # computes distribution over follower types
+    counts = np.zeros(K)
+    for i in follower_sequence:
+        counts[i] += 1
+    follower_distribution = counts / len(follower_sequence)
+
+    # Initialize the optimal policy
+    optimal_bandit = OptimalPolicy(follower_distribution)
+
+    # Run the game with OFUL
+    optimal_game = StackelbergGame(
+        action_space=action_space,
+        bandit_algorithm=optimal_bandit,
+        leader_utility_function=leader_utility_function,
+        follower_utility_functions=follower_utility_functions,
+        context_sequence=context_sequence,
+        follower_sequence=follower_sequence
+    )
+
+    optimal_cumulative_utility = optimal_game.play_game()
+    return optimal_cumulative_utility
+    
+
 def run_oful(game_dict):
     context_sequence = game_dict["context_sequence"]
     action_space = game_dict["action_space"]
@@ -435,29 +440,6 @@ def run_oful(game_dict):
 
     oful_cumulative_utility = oful_game.play_game()
     return oful_cumulative_utility
-
-def run_logdet(game_dict):
-    context_sequence = game_dict["context_sequence"]
-    action_space = game_dict["action_space"]
-    leader_utility_function = game_dict["leader_utility_function"]
-    follower_utility_functions = game_dict["follower_utility_functions"]
-    follower_sequence = game_dict["follower_sequence"]
-
-    # Initialize the LogDetFTRL bandit
-    logdet_bandit = LogDetFTRL()
-
-    # Run the game with LogDetFTRL
-    logdet_game = StackelbergGame(
-        action_space=action_space,
-        bandit_algorithm=logdet_bandit,
-        leader_utility_function=leader_utility_function,
-        follower_utility_functions=follower_utility_functions,
-        context_sequence=context_sequence,
-        follower_sequence=follower_sequence
-    )
-
-    logdet_cumulative_utility = logdet_game.play_game()
-    return logdet_cumulative_utility
 
 def run_algorithm3(game_dict, num_exploration_rounds):
     context_sequence = game_dict["context_sequence"]
@@ -561,15 +543,44 @@ def plot_cumulative_utilities(alg_dict):
     # plt.grid()
     plt.show()
 
+def plot_regret(alg_dict):
+    if "Optimal Policy" not in alg_dict:
+        raise ValueError('"Optimal Policy" must be a key in alg_dict to compute regret.')
+
+    # Load Optimal Policy cumulative utilities
+    optimal_utility_list = pickle.load(open(alg_dict["Optimal Policy"], 'rb'))
+    optimal_stacked = np.vstack(optimal_utility_list)  # shape: (num_runs, T)
+
+    for alg in alg_dict.keys():
+        if alg == "Optimal Policy":
+            continue  # Don't compute regret for Optimal Policy itself
+
+        # Load cumulative utility of this algorithm
+        alg_utility_list = pickle.load(open(alg_dict[alg], 'rb'))
+        alg_stacked = np.vstack(alg_utility_list)  # shape: (num_runs, T)
+
+        # Compute regret per run (optimal - algorithm)
+        regret_runs = optimal_stacked - alg_stacked  # shape: (num_runs, T)
+        regret_mean = np.mean(regret_runs, axis=0)
+        regret_std = np.std(regret_runs, axis=0)
+
+        plt.plot(range(T), regret_mean, label=alg)
+        plt.fill_between(range(T), regret_mean - regret_std, regret_mean + regret_std, alpha=0.2)
+
+    plt.xlabel("Time")
+    plt.ylabel("Regret")
+    plt.title(f"Regret\n(d={CONTEXT_LENGTH}, K={K}, {NUM_ACTIONS} leader actions, {NUM_FOLLOWER_ACTIONS} follower actions)")
+    plt.legend()
+    plt.show()
+
 if __name__=="__main__":
     print("Generating games")
     game_list = generate_games(follower_context=FOLLOWER_CONTEXT)
 
     # game_list = pickle.load(open(game_fname,'rb'))
 
-    # alg_list = ["Algorithm1-OFUL", "Barycentric Explore-Then-Commit", "Random Baseline"]
-    alg_list = ["Algorithm1-OFUL", "Random Baseline"]
-    # alg_list = ["alg3"]
+    # alg_list = ["Algorithm1-OFUL", "Barycentric Explore-Then-Commit", "Random Baseline", "Optimal Policy"]
+    alg_list = ["Algorithm1-OFUL", "Random Baseline", "Optimal Policy"]
     alg_dict = {}
     for alg in alg_list:
 
@@ -617,4 +628,16 @@ if __name__=="__main__":
                     random_utility_list.append(run_random(game_dict)) 
                 pickle.dump(random_utility_list, open(random_fname, 'wb'))
 
+        elif alg == "Optimal Policy":
+            alg_dict[alg] = optimal_fname
+            if os.path.exists(optimal_fname):
+                print("The optimal policy has already been run.")
+            else:
+                optimal_utility_list = []
+                for idx, game_dict in enumerate(game_list):
+                    print(f"optimal policy run {idx+1}")
+                    optimal_utility_list.append(run_optimal_policy(game_dict)) 
+                pickle.dump(optimal_utility_list, open(optimal_fname, 'wb'))
+
     plot_cumulative_utilities(alg_dict)
+    plot_regret(alg_dict)
